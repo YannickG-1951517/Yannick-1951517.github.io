@@ -1,5 +1,8 @@
 window.svg;
 
+const SILENCE_TIME = 1000; // ms
+const STALL_RATIO = 0.1; // 10% of the total events are stalls
+
 // document.getElementById("testbutton").addEventListener("click", function() {
 //     indexedDB.deleteDatabase("TAPE");
 // });
@@ -32,6 +35,18 @@ window.onload = function() {
         createFileListButtons();
         showComponents();
     }
+}
+
+function loadTestfile (event) {
+    let data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(testfile));
+    
+    let link = document.createElement("a");
+    link.setAttribute("href", data);
+    link.setAttribute("download", "TAPE_testfile.qlog");
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 // =================================================================================================
@@ -156,7 +171,7 @@ document. getElementById("body").addEventListener("keydown", function(event) {
 
 function createGraphOptions () {
     let zone = d3.select("#draw-zone");
-    let row = zone.append("div").classed("row", true);
+    let row = zone.append("div").classed("row mb-3", true);
 
     let yAxisZone = row.append("div").classed("col-4", true);
     yAxisZone.append("h3").text("Y axis");
@@ -182,6 +197,7 @@ function createGraphOptions () {
 
     let buttonZone = row.append("div").classed("col-4", true);
     let buttonRow = buttonZone.append("div").classed("row justify-content-around", true);
+    buttonRow.append("button").classed("col-auto btn btn-primary", true).attr("type", "button").attr("id", "apply-zoom-btn").text("Apply zoom");
     buttonRow.append("button").classed("col-auto btn btn-primary", true).attr("type", "button").attr("id", "reset-zoom-btn").text("Reset zoom");
     let slider = buttonRow.append("div").classed("col-auto mt-1", true);
     let sliderGroup = slider.append("label").classed("switch", true);
@@ -586,7 +602,7 @@ async function checkForSilence () {
     let events = await getEventsFromDB(sessionStorage.getItem("file-name"));
     let timeOddities = [];
     for (let i = 0; i < events.length-1; i++) {
-        if (events[i+1].time - events[i].time > 1000) {
+        if (events[i+1].time - events[i].time > SILENCE_TIME) {
             timeOddities.push({type: "time", start: events[i], end: events[i+1]});
         }
     }
@@ -594,6 +610,7 @@ async function checkForSilence () {
 }
 
 async function checkForStallOddity () {
+    console.log(sessionStorage.getItem("file-name"));
     let events = await getEventsFromDB(sessionStorage.getItem("file-name"));
     let stallCount = 0;
     for (let i = 0; i < events.length-1; i++) {
@@ -602,7 +619,7 @@ async function checkForStallOddity () {
         }
     }
     let ratio = stallCount / events.length;
-    if (ratio > 0.1) {
+    if (ratio > STALL_RATIO) {
         return [{type: "stall", count: stallCount, totalCount: events.length}];
     }
     else {
@@ -733,11 +750,10 @@ async function drawEventLineChart () {
         clearGraph();
         return;
     }
-
     
-    margin = {top: 40, right: 20, bottom: 30, left: 75}
-    width = 800 - margin.left - margin.right,
-    height = 400 - margin.top - margin.bottom;
+    margin = {top: 40, right: 0, bottom: 30, left: 75}
+    width = document.getElementById("draw-zone").clientWidth - margin.left - margin.right,
+    height = document.getElementById("draw-zone").clientHeight - margin.top - margin.bottom;
     
     let row = d3.select("#draw-zone").append("div").classed("row", true);
     
@@ -745,7 +761,6 @@ async function drawEventLineChart () {
         .append("svg")
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
-            .attr("class", "col-10")
             .attr("id", "svg")
         .append("g")
             .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
@@ -833,9 +848,6 @@ async function drawEventLineChart () {
         .attr("r", 5)
         .style("opacity", 0.3)
         .style("fill", "#0000CC")
-
-
-    
 
     // Change the tooltip when user hover / leave a cell
     d3.selectAll("#dot")
@@ -967,6 +979,12 @@ async function drawEventLineChart () {
     document.getElementById("reset-zoom-btn").addEventListener("click", function() {
         xScale.domain([minIndex, maxIndex]),
         yScale.domain([minTime, maxTime]);
+        performTransition();
+    });
+
+    document.getElementById("apply-zoom-btn").addEventListener("click", function() {
+        xScale.domain([document.getElementById("x-min").value, document.getElementById("x-max").value]);
+        yScale.domain([document.getElementById("y-min").value, document.getElementById("y-max").value]);
         performTransition();
     });
 
@@ -1434,16 +1452,13 @@ function drawStallLine (StallEvents) {
 
     window.svg = d3.select('#left-zone')
         .append('svg')
-        .classed('col-md-12 col-6', true)
+        .classed('position-fixed top-50 end-50', true)
         .attr('width', 500)
         .attr('height', 20)
-        .style('left', '100px')
-        .style('margin-top', '100px')
-        .style('position', 'fixed');
     
 
     let margin = 10,
-        width = svg.attr("width") - margin;
+        width = svg.attr("width") - margin * 2;
     
     let minTime = 0,
         maxTime = d3.max(stallList, function(d) { return d.playhead; });
@@ -1526,11 +1541,13 @@ function drawStallList (parcedEvents) {
         stallList.push(stall);
     });
 
-    
-
     window.svg = d3.select('#draw-zone')
-        .append('table')
+        .append('div')
+        .attr('id', 'right-zone')
         .classed('col-6', true)
+
+    d3.select('#right-zone')
+        .append('table')
         .style("border-collapse", "collapse")
         .style("border", "2px black solid");
     
@@ -1595,7 +1612,7 @@ function drawStallList (parcedEvents) {
 
 }
 
-function drawStallButtons (parcedEvents) {
+function drawStallButtons () {
 
     window.svg = d3.select('#draw-zone')
         .append('div')
@@ -1604,7 +1621,7 @@ function drawStallButtons (parcedEvents) {
 
     // create to-top button
     let buttons = window.svg.append('button')
-        .classed('btn btn-dark position-fixed bottom-0 mb-5', true)
+        .classed('btn btn-dark position-fixed bottom-0 end-50 mb-5', true)
         .style('width', 'auto')
 
         .text("To top")
