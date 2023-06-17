@@ -3,14 +3,6 @@ window.svg;
 const SILENCE_TIME = 1000; // ms
 const STALL_RATIO = 0.1; // 10% of the total events are stalls
 
-// document.getElementById("testbutton").addEventListener("click", function() {
-//     indexedDB.deleteDatabase("TAPE");
-// });
-
-// document.getElementById("getcontent").addEventListener("click", async function() {
-//     let content = await getEventsFromDB(sessionStorage.getItem("file-name"));
-//     console.log(content);
-// });
 
 window.addEventListener("beforeunload", (event) => {
     // event.returnValue = "\\o/";
@@ -25,9 +17,15 @@ window.onload = function() {
             const store = db.createObjectStore("qlog-file", {keyPath: "file"});
             store.createIndex("file", "file", {unique: true});
         }
-        // request.onsuccess = (event) => {
-        // }
     } else {
+        if (sessionStorage.getItem("configuration") != undefined) {
+            let min = document.getElementById("min");
+            let max = document.getElementById("max");
+            console.log("configuration: ", sessionStorage.getItem("configuration"));
+            let configuration = JSON.parse(sessionStorage.getItem("configuration"));
+            min.value = configuration.min;
+            max.value = configuration.max;
+        }
         updateName();
         fillOdditiesList();
         createTrimTypeButtons();
@@ -35,18 +33,6 @@ window.onload = function() {
         createFileListButtons();
         showComponents();
     }
-}
-
-function loadTestfile (event) {
-    let data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(testfile));
-    
-    let link = document.createElement("a");
-    link.setAttribute("href", data);
-    link.setAttribute("download", "TAPE_testfile.qlog");
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
 }
 
 // =================================================================================================
@@ -86,10 +72,6 @@ function handleDrop (e) {
 
     handleFiles(files);
 }
-
-// function handleConfiguration (files) {
-//     setConfiguration(files[0]);
-// }
 
 function handleFiles (files) {
     ProcessFile(files[0]);
@@ -264,7 +246,7 @@ function determineGraphType() {
 // Actions as a result of user interaction
 
 function createGraph(graphType) {
-    console.log(graphType);
+    // console.log(graphType);
     if (window.svg != undefined) {
         clearGraph();
     }
@@ -302,12 +284,15 @@ function createEventsPage () {
 async function createStallListPage () {
     let StallEvents = await getEventsFromDB(sessionStorage.getItem("file-name"), "stall");
 
-    if (StallEvents.length == 0) {
+    if (StallEvents.length == 2) {
         alert("No stall events in qlog file");
         return;
     }
 
     drawStallButtons(StallEvents);
+    drawVideoPlayer();
+    drawBufferOccupancyChart();
+    showRTTGraph();
     drawStallLine(StallEvents);
     drawStallList(StallEvents);
 }
@@ -324,22 +309,17 @@ async function createEventTypeOverviewPage () {
 }
 
 function setConfiguration (configuration) {
+    let file = configuration[0];
     let fr = new FileReader();
     fr.onload = function() {
         let fileContent = fr.result;
         try {
-            let fileConfig = JSON.parse(fileContent)["Configuration"];
-            // console.log(fileConfig);
-            let min = document.getElementById("min");
-            let max = document.getElementById("max");
-            min.value = fileConfig.min;
-            max.value = fileConfig.max;
-            sessionStorage.setItem("configuration", JSON.stringify(fileConfig));
+            handleConfiguration(JSON.parse(fileContent));
         } catch {
             alert("Wrong .json file (formatting might be wrong). Try inputting a different file.")
         }
     } 
-    fr.readAsText(configuration);
+    fr.readAsText(file);
 }
 
 function ProcessFile (file) {
@@ -361,14 +341,16 @@ function ProcessFile (file) {
 }
 
 function handleConfiguration (configuration) {
-    console.log(configuration);
+    console.log(JSON.stringify(configuration));
     if (configuration == undefined) {
         sessionStorage.removeItem("configuration");
         return;
     } else {
         let proceed = confirm("A configuration was found in the qlog file. Do you want to use it?");
         if (proceed) {
+
             let config = JSON.stringify(configuration["TAPE"]);
+            console.log(config);
             sessionStorage.setItem("configuration", config);
             let min = document.getElementById("min");
             let max = document.getElementById("max");
@@ -425,15 +407,14 @@ document.getElementById("save-to-qlog").addEventListener("click", async function
 
 document.getElementById("save-to-json").addEventListener("click", function(event) {
     event.preventDefault();
-    let obj = {
-        name: sessionStorage.getItem("file-name"),
-        Configuration: {
+    const configuration = {
+        "TAPE": {
         max: document.getElementById("max").value,
-        min: document.getElementById("min").value,}
-    }
+        min: document.getElementById("min").value,
+    }};
 
     // Convert it to a string and encode it as a data URI
-    let data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj));
+    let data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(configuration));
 
     // Create an anchor element with the data URI as the href attribute and the file name as the download attribute
     let link = document.createElement("a");
@@ -449,10 +430,97 @@ document.getElementById("save-to-json").addEventListener("click", function(event
 });
 
 function saveToSvg () {
-    // TODO add a way to save the svg
-    saveSvgAsPng(document.getElementById("svg"), sessionStorage.getItem("file-name") + ".png", {scale: 2});
+
+    switch (document.getElementById("graph-picker").value) {
+        case "Events":
+            const svg = document.querySelector('svg');
+            downloadSvg(svg, "events-" + sessionStorage.getItem("file-name") + ".png");
+            break;
+        case "Stall-list":
+            const bufferChart = document.getElementById("buffer-occupancy-chart");
+            const RTTChart = document.getElementById("RTT-chart");
+            downloadSvg(bufferChart, "buffer-occupancy-" + sessionStorage.getItem("file-name") + ".png");
+            downloadSvg(RTTChart, "RTT-" + sessionStorage.getItem("file-name") + ".png");
+            break;
+        case "Event-type-overview":
+            const eventChart = document.getElementById("event-types-chart");
+            downloadSvg(eventChart, "event-types-" + sessionStorage.getItem("file-name") + ".png");
+            break;
+        case "Playhead-progress":
+            const playheadChart = document.getElementById("playhead-progress-chart");
+            downloadSvg(playheadChart, "playhead-progress-" + sessionStorage.getItem("file-name") + ".png");
+            break;
+    }
+
     
 }
+
+//====================================================================================================
+
+function copyStylesInline(destinationNode, sourceNode) {
+   var containerElements = ["svg","g"];
+   for (var cd = 0; cd < destinationNode.childNodes.length; cd++) {
+       var child = destinationNode.childNodes[cd];
+       if (containerElements.indexOf(child.tagName) != -1) {
+            copyStylesInline(child, sourceNode.childNodes[cd]);
+            continue;
+       }
+       var style = sourceNode.childNodes[cd].currentStyle || window.getComputedStyle(sourceNode.childNodes[cd]);
+       if (style == "undefined" || style == null) continue;
+       for (var st = 0; st < style.length; st++){
+            child.style.setProperty(style[st], style.getPropertyValue(style[st]));
+       }
+   }
+}
+
+function triggerDownload (imgURI, fileName) {
+  var evt = new MouseEvent("click", {
+    view: window,
+    bubbles: false,
+    cancelable: true
+  });
+  var a = document.createElement("a");
+  a.setAttribute("download", fileName);
+  a.setAttribute("href", imgURI);
+  a.setAttribute("target", '_blank');
+  a.dispatchEvent(evt);
+}
+
+function downloadSvg(svg, fileName) {
+  var copy = svg.cloneNode(true);
+  copyStylesInline(copy, svg);
+  var canvas = document.createElement("canvas");
+  var bbox = svg.getBBox();
+  canvas.width = bbox.width;
+  canvas.height = bbox.height;
+  var ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, bbox.width, bbox.height);
+  var data = (new XMLSerializer()).serializeToString(copy);
+  var DOMURL = window.URL || window.webkitURL || window;
+  var img = new Image();
+  var svgBlob = new Blob([data], {type: "image/svg+xml;charset=utf-8"});
+  var url = DOMURL.createObjectURL(svgBlob);
+  img.onload = function () {
+    ctx.drawImage(img, 0, 0);
+    DOMURL.revokeObjectURL(url);
+    if (typeof navigator !== "undefined" && navigator.msSaveOrOpenBlob)
+    {
+        var blob = canvas.msToBlob();         
+        navigator.msSaveOrOpenBlob(blob, fileName);
+    } 
+    else {
+        var imgURI = canvas
+            .toDataURL("image/png")
+            .replace("image/png", "image/octet-stream");
+        triggerDownload(imgURI, fileName);
+    }
+    // document.removeChild(canvas);
+  };
+  img.src = url;
+}
+
+//==================================================================================================
+
 
 async function createTrimTypeButtons () {
     let events = await getEventsFromDB(sessionStorage.getItem("file-name"));
@@ -751,7 +819,7 @@ async function drawEventLineChart () {
         return;
     }
     
-    margin = {top: 40, right: 0, bottom: 30, left: 75}
+    margin = {top: 40, right: 50, bottom: 30, left: 75}
     width = document.getElementById("draw-zone").clientWidth - margin.left - margin.right,
     height = document.getElementById("draw-zone").clientHeight - margin.top - margin.bottom;
     
@@ -819,20 +887,6 @@ async function drawEventLineChart () {
 
     var dots = svg.append('g')
     .attr("clip-path", "url(#clip)")
-
-    var line = d3.line()
-        .x(function(d) { return xScale(d.index); }) 
-        .y(function(d) { return yScale(d.time); }) 
-        .curve(d3.curveMonotoneX);
-
-    // Line of personal data
-    dots.append("g").append("path")
-        .datum(data)
-        .attr("class", "line")
-        .attr("d", line)
-        .style("fill", "none")
-        .style("stroke", "#0000CC")
-        .style("stroke-width", "2");
 
     // dots with personal data
     dots
@@ -950,7 +1004,7 @@ async function drawEventLineChart () {
     function idled() { idleTimeout = null; }
 
     function updateChart (e) {
-        extent = e.selection;
+        let extent = e.selection;
         // console.log(extent);
         if (!extent) {
             if (!idleTimeout) return idleTimeout = setTimeout(idled, 350); 
@@ -1015,9 +1069,9 @@ async function drawEventLineChart () {
 
         
             
-        svg.select(".line")
-            .transition().duration(1000)
-            .attr("d", line);
+        // svg.select(".line")
+        //     .transition().duration(1000)
+        //     .attr("d", line);
     }
 
     // Tooltip
@@ -1037,12 +1091,8 @@ async function drawEventLineChart () {
 }
 
 async function drawPlayheadProgressLineChart () {
-    // var fileContent = sessionStorage.getItem("qlog-file");
-    // let parcedEvents = [];
-    // parcedEvents = parcePlayhead(fileContent);
     let Events = await getEventsFromDB(sessionStorage.getItem("file-name"), "playhead_progress");
     let parcedEvents = parcePlayhead(Events);
-    // console.log(parcedEvents);
 
     if (parcedEvents.length == 0) {
         alert("No events found in qlog file");
@@ -1051,6 +1101,7 @@ async function drawPlayheadProgressLineChart () {
     }
 
     window.svg = d3.select("#draw-zone").append("svg")
+        .attr("id", "playhead-progress-chart")
         .attr("width", 1000)
         .attr("height", 500),
     margin = 200,
@@ -1059,7 +1110,6 @@ async function drawPlayheadProgressLineChart () {
 
     let maxPlaytime = 0;
     parcedEvents.forEach((dataPoint) => {
-        // console.log(dataPoint.count);
         if (dataPoint.playhead > maxPlaytime) {
             maxPlaytime = dataPoint.playhead;            
         }});
@@ -1088,7 +1138,7 @@ async function drawPlayheadProgressLineChart () {
     // Y label
     window.svg.append('text')
         .attr('text-anchor', 'middle')
-        .attr('transform', 'translate(45,' + ((height/2) - 50) + ')rotate(-90)')
+        .attr('transform', 'translate(45,' + ((height/2) + 50) + ')rotate(-90)')
         .style('font-family', 'Helvetica')
         .style('font-size', 12)
         .text("Playhead progress (ms)");
@@ -1125,6 +1175,7 @@ async function drawPlayheadProgressLineChart () {
             .x(function(d) { return xScale(d.time) + 100 })
             .y(function(d) { return yScale(d.playhead) + 100 })
         );
+
 }
 
 function drawTypesBarChart (parcedEvents) {
@@ -1147,6 +1198,7 @@ function drawTypesBarChart (parcedEvents) {
     window.svg = d3.select("#drawing-zone-row").append("svg")
         .attr("width", 1000)
         .attr("height", 500)
+        .attr("id", "event-types-chart")
         .attr("class", "col-12"),
 
         margin = 200,
@@ -1438,7 +1490,835 @@ function drawRequestBubbleChart () {
     })
 }
 
-function drawStallLine (StallEvents) {
+async function drawVideoPlayer () {
+    let events = await getEventsFromDB(sessionStorage.getItem("file-name"));
+
+    let videoPlayerZone = d3.select("#left-zone")
+        .append("div")
+        .attr("id", "video-player-zone")
+        .classed("position-sticky top-0 mt-3", true)
+
+}
+
+async function drawBufferOccupancyChart () {
+    let bufferOccupancyEvents = await getEventsFromDB(sessionStorage.getItem("file-name"), "occupancy_update");
+    let stream_end = await getEventsFromDB(sessionStorage.getItem("file-name"), "stream_end");
+
+    let videoBufferEvents = [];
+    let audioBufferEvents = [];
+    let subtitleBufferEvents = [];
+    let manifestBufferEvents = [];
+    let otherBufferEvents = [];
+    bufferOccupancyEvents.forEach((dataPoint) => {
+        if (dataPoint.data.media_type == "video") {
+            videoBufferEvents.push(dataPoint);
+        } else if (dataPoint.data.media_type == "audio") {
+            audioBufferEvents.push(dataPoint);
+        } else if (dataPoint.data.media_type == "subtitles") {
+            subtitleBufferEvents.push(dataPoint);
+        } else if (dataPoint.data.media_type == "manifest") {
+            manifestBufferEvents.push(dataPoint);
+        } else if (dataPoint.data.media_type == "other") {
+            otherBufferEvents.push(dataPoint);
+        }
+    });
+
+    
+    window.svg = d3.select('#video-player-zone')
+        .append('svg')
+        .attr('width', document.getElementById("video-player-zone").offsetWidth)
+        .attr('height', 400)
+        .attr("id", "buffer-occupancy-chart")
+
+    let margin = 50,
+        width = svg.attr("width") - margin-50,
+        height = svg.attr("height") - margin;
+    
+    let graphEnd  = stream_end[0].time;
+
+    let xScale = d3.scaleLinear()
+        .domain([0, stream_end[0].time])
+        .range([0, width]);
+
+    if (document.getElementById("min").value != "" && document.getElementById("slider-2").checked) {
+        xScale.domain([document.getElementById("min").value, stream_end[0].time]).range([0, width]);
+    }
+
+    let yTopScale = d3.max(bufferOccupancyEvents, function(d) { return d.data.buffer.level_ms; });
+
+    let yScale = d3.scaleLinear()
+        .domain([0, d3.max(bufferOccupancyEvents, function(d) { return d.data.buffer.level_ms; })])
+        .range([height, 0]); 
+
+
+    let g = svg.append("g")
+        .attr("transform", "translate(" + margin + ")")
+
+    let xAxis = g.append("g")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(xScale));
+
+    let yAxis = g.append("g")
+        .call(d3.axisLeft(yScale).ticks(10));
+
+    // title
+    svg.append('text')
+        .attr('x', width/2 + margin)
+        .attr('y', 20)
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('Buffer occupancy over time/Bitrates');
+
+
+    var dots = g.append('g')
+    .attr("id", "dots")
+    .attr("clip-path", "url(#clip)")
+
+    // add the dots
+    dots.append("g") // I got not a single clue why this needs to be here but the bitrates graph beaks without it
+        .attr("id", "bit-dot-zone")
+        .selectAll('dot')
+        .data(bufferOccupancyEvents)
+        .enter()
+        .append('circle')
+        .attr("id", "buffer-occupancy-dot")
+        .attr("cx", function (d) { return xScale(d.time); } )
+        .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+        .attr("r", 2.5)
+        .style("fill", "#ffffff")
+        .attr("opacity", 0.0);
+
+    document.getElementById("video-buffer-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            dots.append("g")
+                .attr("id", "video-buffer-dot-zone")
+                .selectAll('dot')
+                .data(videoBufferEvents)
+                .enter()
+                .append('circle')
+                .attr("id", "video-buffer-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+                .attr("r", 2.5)
+                .style("fill", "#69b3a2");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "video-buffer-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#aad4ca")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+
+            d3.selectAll("#video-buffer-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Video buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("fill", "#69b3a2");
+                    return tooltip.style("visibility", "hidden");
+                })            
+        } else {
+            d3.selectAll("#video-buffer-dot").remove();
+            d3.select("#video-buffer-tooltip").remove();
+        }
+    });
+
+    document.getElementById("audio-buffer-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            g.append("g")
+                .attr("id", "audio-buffer-dot-zone")
+                .selectAll('dot')
+                .data(audioBufferEvents)
+                .enter()
+                .append('circle')
+                .attr("id", "audio-buffer-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+                .attr("r", 2.5)
+                .style("fill", "#002699");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "audio-buffer-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#668cff")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+
+            d3.selectAll("#audio-buffer-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Audio buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("fill", "#002699");
+                    return tooltip.style("visibility", "hidden");
+                })            
+        } else {
+            d3.selectAll("#audio-buffer-dot").remove();
+            d3.select("#audio-buffer-tooltip").remove();
+        }
+    });
+
+    document.getElementById("subtitle-buffer-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            g.append("g")
+                .attr("id", "subtitle-buffer-dot-zone")
+                .selectAll('dot')
+                .data(subtitleBufferEvents)
+                .enter()
+                .append('circle')
+                .attr("id", "subtitle-buffer-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+                .attr("r", 2.5)
+                .style("fill", "#eb99ff");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "subtitle-buffer-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#cc00ff")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+
+            d3.selectAll("#subtitle-buffer-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Subtitle buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("fill", "#eb99ff");
+                    return tooltip.style("visibility", "hidden");
+                })            
+        } else {
+            d3.selectAll("#subtitle-buffer-dot").remove();
+            d3.select("#subtitle-buffer-tooltip").remove();
+        }
+    });
+
+    document.getElementById("manifest-buffer-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            g.append("g")
+                .attr("id", "manifest-buffer-dot-zone")
+                .selectAll('dot')
+                .data(manifestBufferEvents)
+                .enter()
+                .append('circle')
+                .attr("id", "manifest-buffer-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+                .attr("r", 2.5)
+                .style("fill", "#333300");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "manifest-buffer-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#cccc00")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+
+            d3.selectAll("#manifest-buffer-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Manifest buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("fill", "#333300");
+                    return tooltip.style("visibility", "hidden");
+                })            
+        } else {
+            d3.selectAll("#manifest-buffer-dot").remove();
+            d3.select("#manifest-buffer-tooltip").remove();
+        }
+    });
+
+    document.getElementById("other-buffer-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            g.append("g")
+                .attr("id", "other-buffer-dot-zone")
+                .selectAll('dot')
+                .data(otherBufferEvents)
+                .enter()
+                .append('circle')
+                .attr("id", "other-buffer-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+                .attr("r", 2.5)
+                .style("fill", "#cc6600");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "other-buffer-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#ffb366")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+
+            d3.selectAll("#other-buffer-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Other buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).style("fill", "#cc6600");
+                    return tooltip.style("visibility", "hidden");
+                })            
+        } else {
+            d3.selectAll("#other-buffer-dot").remove();
+            d3.select("#other-buffer-tooltip").remove();
+        }
+    });   
+
+    // Zoom
+    let clip = g.append("defs").append("svg:clipPath")
+        .attr("id", "clip")
+        .append("svg:rect")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("x", 0)
+        .attr("y", 0);
+
+    let brush = d3.brushX()
+        .extent([[0, 0], [width, height]])
+        .on("end", updateChart);
+
+    dots
+    .append("g")
+        .attr("class", "brush")
+        .call(brush);
+
+
+    let idleTimeout;
+    function idled() { idleTimeout = null; }
+
+    function updateChart(e) {
+        let extent = e.selection;
+        let resetZoom = false;
+        if (!extent) {
+            if (!idleTimeout) return idleTimeout = setTimeout(idled, 350); 
+            xScale.domain([0, graphEnd]);
+            resetZoom = true;
+        } else {
+            xScale.domain([ xScale.invert(extent[0]), xScale.invert(extent[1]) ]);
+            g.selectAll(".brush").call(brush.move, null);
+        }
+        const updateRTTGraphEvent = new CustomEvent("updateRTTGraph", { detail: { data: extent, resetZoom: resetZoom } });
+        document.dispatchEvent(updateRTTGraphEvent);
+        const redrawBitrateLineEvent = new CustomEvent("redrawBitrateLine", {detail: {data: extent, resetZoom: resetZoom}});
+        document.dispatchEvent(redrawBitrateLineEvent);
+        xAxis.transition().duration(1000).call(d3.axisBottom(xScale))
+        dots
+            .selectAll("circle")
+            .transition().duration(1000)
+            .attr("cx", function (d) { return xScale(d.time); } );
+            
+    }
+
+    document.addEventListener("updateBufferGraph", function (e) {
+        if (e.detail.resetZoom) {
+            xScale.domain([0, graphEnd]);
+        } else {
+            xScale.domain([ xScale.invert(e.detail.data[0]), xScale.invert(e.detail.data[1]) ]);
+        }
+        xAxis.transition().duration(1000).call(d3.axisBottom(xScale))
+        dots
+            .selectAll("circle")
+            .transition().duration(1000)
+            .attr("cx", function (d) { return xScale(d.time); } );
+    });
+
+    
+
+}
+
+
+async function showBitrateGraph () {
+    if (document.getElementById("bitrate-dot")) {
+        d3.selectAll("#bitrate-dot").remove();
+        d3.select("#bitrate-line").remove();
+        d3.select("#bitrate-tooltip").remove();
+        d3.select("#bitrate-axis").remove();
+        return;
+    }
+    let metricsEvents = await getEventsFromDB(sessionStorage.getItem("file-name"), "metrics_updated");
+
+    let bitrateEvents = [];
+    metricsEvents.forEach((dataPoint) => {
+        if (dataPoint.data.bitrate) {
+            bitrateEvents.push(dataPoint);
+        }
+    })
+
+
+    let streamEnd = await getEventsFromDB(sessionStorage.getItem("file-name"), "stream_end");
+
+    let bitratePoints = d3.select("#dots");
+    let bufferOccpancyChart = d3.select("#buffer-occupancy-chart");
+
+    let margin = 50;
+    let width = bitratePoints.node().getBoundingClientRect().width;
+        height = bitratePoints.node().getBoundingClientRect().height;
+
+
+    let xScale = d3.scaleLinear()
+        .domain([0, streamEnd[0].time])
+        .range([0, width]);
+    
+    let yScale = d3.scaleLinear()
+        .domain([0, d3.max(bitrateEvents, function(d) { return d.data.bitrate; })+30])
+        .range([height, 0]);
+
+    console.log(d3.max(bitrateEvents, function(d) { return d.data.bitrate; }));
+    
+    let chartWidth = bufferOccpancyChart.node().getBoundingClientRect().width - margin;
+
+    bufferOccpancyChart.append("g")
+        .attr("transform", "translate(" + chartWidth + ")")
+        .attr("id", "bitrate-axis")
+        .attr("color", "#009f00")
+        .call(d3.axisRight(yScale));
+    
+    // add final event at the end of the stream to connect line
+    bitrateEvents.push({time: streamEnd[0].time, data: {bitrate: bitrateEvents[bitrateEvents.length-1].data.bitrate}})
+    
+    let line = d3.line()
+        .x(function(d) { return xScale(d.time); })
+        .y(function(d) { return yScale(d.data.bitrate); })
+        .curve(d3.curveStepAfter);
+
+
+    let test = bitratePoints.append("g").append("path")
+        .datum(bitrateEvents)
+        .attr("class", "line")
+        .attr("d", line)
+        .attr("id", "bitrate-line")
+        .style("fill", "none")
+        .style("stroke", "#009f00")
+        .style("stroke-width", "2");
+
+    // remove final event
+    bitrateEvents.pop();
+
+    bitratePoints.append("g")
+        .selectAll('dot')
+        .data(bitrateEvents)
+        .enter()
+        .append('circle')
+        .attr("id", "bitrate-dot")
+        .attr("cx", function (d) { return xScale(d.time); } )
+        .attr("cy", function (d) { return yScale(d.data.bitrate); } )
+        .attr("r", 3.5)
+        .style("fill", "#006400");
+
+
+    var tooltip = d3.select("body")
+        .append("div")
+            .attr("id", "bitrate-tooltip")
+            .style("position", "absolute")
+            .style("visibility", "hidden")
+            .style("background-color", "#90ee90")
+            .style("border", "solid")
+            .style("border-width", "1px")
+            .style("border-radius", "5px")
+            .style("padding", "5px")
+            .style("width", "auto");
+
+    d3.selectAll("#bitrate-dot")
+        .on("mouseover", function(d) {
+            d3.select(this).style("fill", "red");
+            return tooltip.style("visibility", "visible");
+        })
+        .on("mousemove", function() {
+            const [x, y] = d3.pointer(event); // depricated i know shhhh
+            tooltip.html("Bitrate: " + d3.select(this).data()[0].data.bitrate + "kbps" + "<br>Time: " + d3.select(this).data()[0].time + "ms");
+            return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); // this is super hacky but it works
+        })
+        .on("mouseout", function(d) {
+            d3.select(this).style("fill", "#006400");
+            tooltip.style("visibility", "hidden");
+        });
+
+    
+    document.addEventListener("redrawBitrateLine", function(e) {
+        if (e.detail.resetZoom) {
+            xScale.domain([0, streamEnd[0].time])
+                .range([0, width]);
+
+        } else {
+            let extent = e.detail.data;
+            xScale = d3.scaleLinear()
+                .domain([xScale.invert(extent[0]), xScale.invert(extent[1])])
+                .range([0, width]);
+        }
+
+        test.transition().duration(1000).attr("d", line);
+    
+        
+
+    });
+
+
+
+}
+
+
+async function showRTTGraph () {
+    let metricsEvents = await getEventsFromDB(sessionStorage.getItem("file-name"), "metrics_updated");
+    let streamEnd = await getEventsFromDB(sessionStorage.getItem("file-name"), "stream_end");
+
+    let minRTTEvents = [];
+    let smoothedRTTEvents = [];
+    let latestRTTEvents = [];
+    let RTTVarianceEvents = [];
+    metricsEvents.forEach((dataPoint) => {
+        if (dataPoint.data.min_rtt) {
+            minRTTEvents.push(dataPoint);
+        } 
+        if (dataPoint.data.smoothed_rtt) {
+            smoothedRTTEvents.push(dataPoint);
+        } 
+        if (dataPoint.data.latest_rtt) {
+            latestRTTEvents.push(dataPoint);
+        } 
+        if (dataPoint.data.rtt_variance) {
+            RTTVarianceEvents.push(dataPoint);
+        }
+    })
+
+
+
+    window.svg = d3.select('#video-player-zone')
+        .append('svg')
+        .attr('width', document.getElementById("video-player-zone").offsetWidth)
+        .attr('height', 400)
+        .attr("id", "RTT-chart");
+
+
+    let margin = 50,
+        width = svg.attr("width") - margin-50,
+        height = svg.attr("height") - margin;
+        
+    let xScale = d3.scaleLinear()
+        .domain([0, streamEnd[0].time])
+        .range([0, width]);
+
+    let yScale = d3.scaleLinear()
+        .domain([0, d3.max(latestRTTEvents, function(d) { return d.data.latest_rtt; })])
+        .range([height, 0]);
+    
+    svg.append('text')
+        .attr('x', width/2 + margin)
+        .attr('y', 20)
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('RTT values over time');
+
+
+    
+    let g = svg.append("g")
+            .attr("transform", "translate(" + margin + ")")
+
+    let xAxis = g.append("g")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(xScale));
+
+    let yAxis = g.append("g")
+        .call(d3.axisLeft(yScale).ticks(10));
+    
+    let dotZone = g.append("g")
+        .attr("clip-path", "url(#clip)");
+
+    dotZone.append("g").attr("id", "RTT-dot-zone");
+
+    //add clippath
+    // dotZone.append("clipPath")
+    //     .attr("clip-path", "url(#clip)");
+
+    document.getElementById("minRTT-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            dotZone.selectAll("dot")
+                .data(minRTTEvents)
+                .enter()
+                .append("circle")
+                .attr("id", "minRTT-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.min_rtt); } )
+                .attr("r", 3.5)
+                .style("fill", "#9acd32");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "minRTT-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#b9dc71")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+            
+            d3.selectAll("#minRTT-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    const [x, y] = d3.pointer(event); // depricated i know shhhh
+                    tooltip.html("Min RTT: " + d3.select(this).data()[0].data.min_rtt + "ms" + "<br>Time: " + d3.select(this).data()[0].time + "ms");
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); // this is super hacky but it works
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this).style("fill", "#9acd32");
+                    tooltip.style("visibility", "hidden");
+                });
+        } else {
+            dotZone.selectAll("#minRTT-dot").remove();
+            d3.select("#minRTT-tooltip").remove();
+        }
+    });
+
+    document.getElementById("smoothedRTT-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            dotZone.selectAll("dot")
+                .data(smoothedRTTEvents)
+                .enter()
+                .append("circle")
+                .attr("id", "smoothedRTT-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.smoothed_rtt); } )
+                .attr("r", 3.5)
+                .style("fill", "#4000ff");
+
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "smoothedRTT-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#9876ff")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+            
+            d3.selectAll("#smoothedRTT-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    const [x, y] = d3.pointer(event); // depricated i know shhhh
+                    tooltip.html("Smoothed RTT: " + d3.select(this).data()[0].data.smoothed_rtt + "ms" + "<br>Time: " + d3.select(this).data()[0].time + "ms");
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); // this is super hacky but it works
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this).style("fill", "#4000ff");
+                    tooltip.style("visibility", "hidden");
+                });
+        } else {
+            dotZone.selectAll("#smoothedRTT-dot").remove();
+            d3.select("#smoothedRTT-tooltip").remove();
+        }
+    });
+
+    document.getElementById("latestRTT-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            dotZone.selectAll("dot")
+                .data(latestRTTEvents)
+                .enter()
+                .append("circle")
+                .attr("id", "latestRTT-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.latest_rtt); } )
+                .attr("r", 3.5)
+                .style("fill", "#ff69b4");
+
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "latestRTT-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#ffb7db")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+            
+            d3.selectAll("#latestRTT-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    const [x, y] = d3.pointer(event); // depricated i know shhhh
+                    tooltip.html("Latest RTT: " + d3.select(this).data()[0].data.latest_rtt + "ms" + "<br>Time: " + d3.select(this).data()[0].time + "ms");
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); // this is super hacky but it works
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this).style("fill", "#ff69b4");
+                    tooltip.style("visibility", "hidden");
+                });
+        } else {
+            dotZone.selectAll("#latestRTT-dot").remove();
+            d3.select("#latestRTT-tooltip").remove();
+        }
+    });
+
+    document.getElementById("RTTvar-checkbox").addEventListener("change", function() {
+        if (this.checked) {
+            dotZone.selectAll("dot")
+                .data(RTTVarianceEvents)
+                .enter()
+                .append("circle")
+                .attr("id", "RTTVariance-dot")
+                .attr("cx", function (d) { return xScale(d.time); } )
+                .attr("cy", function (d) { return yScale(d.data.rtt_variance); } )
+                .attr("r", 3.5)
+                .style("fill", "#ff8c00");
+            
+            let tooltip = d3.select("body")
+                .append("div")
+                    .attr("id", "RTTVariance-tooltip")
+                    .style("position", "absolute")
+                    .style("visibility", "hidden")
+                    .style("background-color", "#ffb862")
+                    .style("border", "solid")
+                    .style("border-width", "1px")
+                    .style("border-radius", "5px")
+                    .style("padding", "5px")
+                    .style("width", "auto");
+            
+            d3.selectAll("#RTTVariance-dot")
+                .on("mouseover", function(d) {
+                    d3.select(this).style("fill", "red");
+                    return tooltip.style("visibility", "visible");
+                })
+                .on("mousemove", function() {
+                    const [x, y] = d3.pointer(event); // depricated i know shhhh
+                    tooltip.html("RTT Variance: " + d3.select(this).data()[0].data.rtt_variance + "ms" + "<br>Time: " + d3.select(this).data()[0].time + "ms");
+                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px"); // this is super hacky but it works
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this).style("fill", "#ff8c00");
+                    tooltip.style("visibility", "hidden");
+                });
+        } else {
+            dotZone.selectAll("#RTTVariance-dot").remove();
+            d3.select("#RTTVariance-tooltip").remove();
+        }
+    });
+
+    // Zoom
+    let clip = dotZone.append("defs").append("svg:clipPath")
+        .attr("id", "clip")
+        .append("svg:rect")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("x", 0)
+        .attr("y", 0);
+
+    let brush = d3.brushX()
+        .extent([[0, 0], [width, height]])
+        .on("end", updateChart);
+
+    dotZone
+        .append("g")
+            .attr("class", "brush")
+            .call(brush);
+
+
+    let idleTimeout;
+    function idled() { idleTimeout = null; }
+
+
+    function updateChart(e) {
+        let extent = e.selection;
+        let resetZoom = false;
+        if (!extent) {
+            if (!idleTimeout) return idleTimeout = setTimeout(idled, 350);
+            xScale.domain([0, streamEnd[0].time]);
+            resetZoom = true;
+        } else {
+            xScale.domain([ xScale.invert(extent[0]), xScale.invert(extent[1]) ]);
+            dotZone.select(".brush").call(brush.move, null);
+        }
+        const updateBufferGraphEvent = new CustomEvent("updateBufferGraph", {detail: {data: extent, resetZoom: resetZoom}});
+        document.dispatchEvent(updateBufferGraphEvent);
+        const redrawBitrateLineEvent = new CustomEvent("redrawBitrateLine", {detail: {data: extent, resetZoom: resetZoom}});
+        document.dispatchEvent(redrawBitrateLineEvent);
+        xAxis.transition().duration(1000).call(d3.axisBottom(xScale));
+        dotZone
+            .selectAll("circle")
+            .transition().duration(1000)
+            .attr("cx", function (d) { return xScale(d.time); } );
+        
+    }
+
+    document.addEventListener("updateRTTGraph", function(e) {
+        if (e.detail.resetZoom) {
+            xScale.domain([0, streamEnd[0].time]);
+        } else {
+            xScale.domain([ xScale.invert(e.detail.data[0]), xScale.invert(e.detail.data[1]) ]);
+        }
+        xAxis.transition().duration(1000).call(d3.axisBottom(xScale))
+        dotZone
+            .selectAll("circle")
+            .transition().duration(1000)
+            .attr("cx", function (d) { return xScale(d.time); } );
+    });
+
+}
+
+
+async function drawStallLine (StallEvents) {
     let stallList = [];
     StallEvents.forEach((dataPoint) => {
         let stall = {
@@ -1450,54 +2330,58 @@ function drawStallLine (StallEvents) {
         stallList.push(stall);
     });
 
-    window.svg = d3.select('#left-zone')
+    let streamEnd = await getEventsFromDB(sessionStorage.getItem("file-name"), "stream_end");
+
+
+    window.svg = d3.select('#video-player-zone')
         .append('svg')
-        .classed('position-fixed top-50 end-50', true)
-        .attr('width', 500)
+        .attr('width', d3.select('#video-player-zone').node().getBoundingClientRect().width)
         .attr('height', 20)
-    
 
     let margin = 10,
-        width = svg.attr("width") - margin * 2;
-    
+        width = d3.select('#video-player-zone').node().getBoundingClientRect().width - 2 * margin;
+
     let minTime = 0,
         maxTime = d3.max(stallList, function(d) { return d.playhead; });
     
     let xScale = d3.scaleLinear().domain([minTime, maxTime]).range([0, width]);
+    let lineList = [{playhead:0}, {playhead:streamEnd[0].data.playhead.ms}]
     
     // draw line
     window.svg.append('g')
-        .attr('transform', 'translate(' + margin + ',' + margin + ')')
+        .attr('transform', 'translate(' + margin*5 + ',' + margin + ')')
         .append('path')
-        .datum(stallList)
+        .datum(lineList)
         .attr('fill', 'none')
-        .attr('stroke', 'black')
-        .attr('stroke-width', 1)
+        .attr('stroke', 'gray')
+        .attr('stroke-width', 5)
         .attr('d', d3.line()
-            .x(function(d) { return xScale(d.playhead); })
+            .x(function(d) { 
+                return xScale(d.playhead); })
             .y(function(d) { return 0; })
         )
 
+    xScale = d3.scaleLinear().domain([minTime, streamEnd[0].data.playhead.ms]).range([0, width]);
+
     window.svg.append('g')
-        .attr('transform', 'translate(' + margin + ',' + margin + ')')
+        .attr('transform', 'translate(' + margin*5 + ',' + margin + ')')
         .selectAll('dot')
         .data(stallList)
         .enter()
         .append('circle')
         .attr('id', function(d) { return d.index; })
-        // .attr('cy', function(d, i) { return xScale(i); })
         .attr('cx', function(d) { return xScale(d.playhead); })
         .attr('r', 5)
         .style('fill', 'red')
-        .style('stroke', 'black')
-        .style('stroke-width', 1)
+        .style('stroke', '#313131')
+        .style('stroke-width', 2)
         .on("mouseover", function() {
             if (d3.select('[id="' + d3.select(this).attr("id") + "-row" + '"]')
                 .style("background-color") != "lightblue") {
                 d3.select('[id="' + d3.select(this).attr("id") + "-row" + '"]')
-                    .style("background-color", "green");
+                    .style("background-color", "#4eb14e");
                 d3.select(this)
-                    .style("fill", "green");
+                    .style("fill", "#4eb14e");
             }
         })
         .on("mouseleave", function() {
@@ -1522,19 +2406,26 @@ function drawStallLine (StallEvents) {
                 .style("background-color", "lightblue");
             d3.select(this)
                 .style("fill", "lightblue");
-            window.location.href = "#" + d3.select(this).attr("id") +"-row";
+            if (d3.select(this).attr("id") != "1" && d3.select(this).attr("id") != "2") {
+                let id = Number(d3.select(this).attr("id")) -2 ;
+                window.location.href = "#" + id.toString() +"-row";
+            } else {
+                window.location.href = "#top";
+            }
             }
         })
     
-    
 }
 
-function drawStallList (parcedEvents) {    
+
+async function drawStallList (parcedEvents) { 
+    let streamEnd = await getEventsFromDB(sessionStorage.getItem("file-name"), "stream_end");
+
     let stallList = [];
     parcedEvents.forEach((dataPoint) => {
         let stall = {
             index: stallList.length+1,
-            "time (ms)": dataPoint.time,
+            time: dataPoint.time,
             category: dataPoint.category,
             "playhead (ms)": dataPoint.data.playhead.ms,
         };
@@ -1544,7 +2435,7 @@ function drawStallList (parcedEvents) {
     window.svg = d3.select('#draw-zone')
         .append('div')
         .attr('id', 'right-zone')
-        .classed('col-6', true)
+        .classed('col-4', true)
 
     d3.select('#right-zone')
         .append('table')
@@ -1552,6 +2443,7 @@ function drawStallList (parcedEvents) {
         .style("border", "2px black solid");
     
     window.svg.append('thead')
+        .classed("position-sticky top-0", true)
         .append('tr')
         .selectAll('th')
         .data(Object.keys(stallList[0]))
@@ -1559,7 +2451,18 @@ function drawStallList (parcedEvents) {
         .append('th')
         .style("border", "1px black solid")
         .style("padding", "5px")
+        .style("background-color", "lightgray")
         .text(function (column) { return column; });
+
+
+    let margin = 50;
+    let width = d3.select('#video-player-zone').node().getBoundingClientRect().width - 2* margin,
+        height = 350;
+    let xScale = d3.scaleLinear().domain([0, streamEnd[0].time]).range([0, width]);
+
+    let line = d3.line()
+        .x(function(d) { return xScale(d.x); })
+        .y(function(d) { return d.y; });
 
     window.svg.append('tbody')
         .selectAll('tr')
@@ -1572,7 +2475,25 @@ function drawStallList (parcedEvents) {
                 d3.select('[id="' + d3.select(this).attr("id").slice(0, -4) + '"]')
                     .style("fill", "green");
                 d3.select(this)
-                    .style("background-color", "green");
+                    .style("background-color", "#4eb14e");
+                d3.selectAll('#RTT-dot-zone')
+                    .append('g')
+                    .append('path')
+                    .datum([{x: stallList[d3.select(this).attr("id").slice(0, -4)-1].time, y: 0}, {x: stallList[d3.select(this).attr("id").slice(0, -4)-1].time, y: height}])
+                    .attr('id', d3.select(this).attr("id").slice(0, -4) + '-line')
+                    .attr('d', line)
+                    .attr('stroke', '#004225')
+                    .attr('stroke-width', 2)
+                    .attr('fill', 'none');
+                d3.selectAll('#bit-dot-zone')
+                    .append('g')
+                    .append('path')
+                    .datum([{x: stallList[d3.select(this).attr("id").slice(0, -4)-1].time, y: 0}, {x: stallList[d3.select(this).attr("id").slice(0, -4)-1].time, y: height}])
+                    .attr('id', d3.select(this).attr("id").slice(0, -4) + '-line')
+                    .attr('d', line)
+                    .attr('stroke', '#004225')
+                    .attr('stroke-width', 2)
+                    .attr('fill', 'none');
             }
         })
         .on("mouseleave", function() {
@@ -1581,6 +2502,7 @@ function drawStallList (parcedEvents) {
                     .style("fill", "red")
                 d3.select(this)
                     .style("background-color", "white");
+                d3.selectAll('[id="' + d3.select(this).attr("id").slice(0, -4) + '-line"]').remove();
             }
         })
         .on('click', function() {
@@ -1617,81 +2539,195 @@ function drawStallButtons () {
     window.svg = d3.select('#draw-zone')
         .append('div')
         .attr('id', 'left-zone')
-        .classed('col-6', true)
+        .classed('col-8', true)
+    
+    window.svg.append('div')
+        .attr('id', 'bottom-buttons')
+        .classed('mb-5', true)
 
-    // create to-top button
-    let buttons = window.svg.append('button')
-        .classed('btn btn-dark position-fixed bottom-0 end-50 mb-5', true)
+
+    let button2 = d3.select("#bottom-buttons").append('div')
+        .classed('btn-group dropup', true)
+    
+    button2.append('button')
+        .classed('btn btn-dark dropdown-toggle', true)
+        .attr('data-bs-toggle', 'dropdown')
+        .attr('aria-expanded', 'false')
+        .attr('aria-haspopup', 'true')
+        .text("RTT")
+    
+    let dropdownMenu = button2.append('div')
+        .classed('dropdown-menu dropdown-menu-dark', true)
+        .attr('aria-labelledby', 'dropdownMenuButton')
+        .attr('z-index', '1000')
+    
+
+    dropdownMenu
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'minRTT-checkbox')
+
+    dropdownMenu.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'minRTT-checkbox')
+        .text('min_rtt')
+
+    dropdownMenu
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'smoothedRTT-checkbox')
+
+    dropdownMenu.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'smoothedRTT-checkbox')
+        .text('smoothed_rtt')
+    
+    dropdownMenu
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'latestRTT-checkbox')
+    
+    dropdownMenu.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'latestRTT-checkbox')
+        .text('latest_rtt')
+    
+    dropdownMenu
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'RTTvar-checkbox')
+    
+    dropdownMenu.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'RTTvar-checkbox')
+        .text('rtt_variance')
+
+
+
+    
+    let button3 = d3.select("#bottom-buttons").append('button')
+        .classed('btn btn-dark', true)
         .style('width', 'auto')
+        .style('margin-left', '10px')
+        .text("Bitrates")
+        .on('click', function() {
+            showBitrateGraph();
+        });
+    
+    let button4 = d3.select("#bottom-buttons").append('div')
+        .classed('btn-group dropup', true)
+        .style('margin-left', '10px')
 
+    button4.append('button')
+        .classed('btn btn-dark dropdown-toggle', true)
+        .attr('data-bs-toggle', 'dropdown')
+        .attr('aria-expanded', 'false')
+        .attr('aria-haspopup', 'true')
+        .text("Buffers")
+
+    let dropdownMenu2 = button4.append('div')
+        .classed('dropdown-menu dropdown-menu-dark', true)
+        .attr('aria-labelledby', 'dropdownMenuButton')
+        .attr('z-index', '1000')
+
+    dropdownMenu2
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'video-buffer-checkbox')
+
+    dropdownMenu2.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'video-buffer-checkbox')
+        .text('Video buffer')
+
+    dropdownMenu2
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'audio-buffer-checkbox')
+    
+    dropdownMenu2.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'audio-buffer-checkbox')
+        .text('Audio buffer')
+
+    dropdownMenu2
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'subtitle-buffer-checkbox')
+    
+    dropdownMenu2.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'subtitle-buffer-checkbox')
+        .text('Subtitle buffer')
+
+    dropdownMenu2
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'manifest-buffer-checkbox')
+    
+    dropdownMenu2.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'manifest-buffer-checkbox')
+        .text('Manifest buffer')
+
+    dropdownMenu2
+        .append('div')
+        .classed('form-check form-switch row', true)
+        .style('margin-left', '10px')
+            .append('input')
+                .classed('form-check-input col-4', true)
+                .attr('type', 'checkbox')
+                .attr('id', 'other-buffer-checkbox')
+    
+    dropdownMenu2.append('label')
+        .classed('form-check-label col-8', true)
+        .attr('for', 'other-buffer-checkbox')
+        .text('Other buffer')
+
+
+
+    let toTopButton = d3.select("#body").append('button')
+        .classed('position-fixed bottom-0 end-0 mb-5 mr-5 btn btn-dark', true)
+        .style('width', 'auto')
+        .style('margin-left', '10px')
         .text("To top")
         .on('click', function() {
             window.location.href = "#top";
         });
 
 }
-
-function drawCanvasLineChart (file) {
-    var fileReader = new FileReader();
-    fileReader.onload = function() {
-        let fileContent = fileReader.result;
-        let parcedEvents = [];
-        parcedEvents = parceEvents(fileContent);
-        // console.log(parcedEvents);
-
-        var data = [];
-        for (let i = 0; i < parcedEvents.length; i++) {
-            data.push([parcedEvents[i].time,  i]);
-        }
-
-
-        if (parcedEvents.length == 0) {
-            alert("No events found in qlog file");
-            clearGraph();
-            return;
-        } else {
-            updateName(file.name);
-        }
-
-        const Width = 1000;
-        const Height = 700;
-        const margin = {top: 20, right: 20, bottom: 30, left: 40};
-        const width = Width - margin.right - margin.left;
-        const height= Height - margin.top - margin.bottom;
-
-        const xScale = d3.scaleLinear().rangeRound([0, width]);
-        const yScale = d3.scaleLinear().rangeRound([height, 0]);
-        const xAxis = d3.axisBottom(xScale);
-        const yAxis = d3.axisLeft(  yScale);
-
-        const canvas = d3.select("canvas").attr("width", Width).attr("height", Height);
-        const context = canvas.node().getContext('2d');
-        context.translate(margin.left, margin.top);
-
-        const line = d3.line()
-            .x(d => xScale(d[0]))
-            .y(d => yScale(d[1]))
-            .context(context);
-
-        const xExtent = d3.extent(data, d => d[0]);
-        const yExtent = d3.extent(data, d => d[1]);
-        xScale.domain(xExtent);
-        yScale.domain(yExtent);
-
-        context.clearRect(0, 0, width, height);
-        context.beginPath();
-        line(data);
-        context.lineWidth = 1;
-        context.opacity = 0.7;
-        context.strokeStyle = "steelblue";
-        context.stroke();
-        context.closePath();
-
-                
-    }
-    fileReader.readAsText(file);
-}
-
 
 //==================================================================================================
 // Parcing functions
@@ -1740,13 +2776,17 @@ function parceEvents (fileContent, type = null) {
     let filter1 = document.getElementById("max").value;
     let filter2 = document.getElementById("min").value;
 
-    if (filter1.value != "" || filter2.value != "") {
+    if (filter1 != "" || filter2 != "") {
         if (document.getElementById("slider-1").checked) {
             let filteredEvents = [];
             for (let i = 0; i < events.length; i++) {
                 if (events[i].time <= filter1) {
                     filteredEvents.push(events[i]);
                 }
+            }
+            if (type == "stream_end") {
+                filteredEvents.push({"time": filter1, "type": "stream_end", "data": {"playhead": {"ms": events[events.length - 1].data.playhead.ms}}});
+                console.log(filteredEvents);
             }
             events = filteredEvents;
         }
@@ -1758,7 +2798,7 @@ function parceEvents (fileContent, type = null) {
                 }
             }
             events = filteredEvents;
-            console.log(events);
+            // console.log(events);
         }
     }
 
@@ -1769,7 +2809,7 @@ function parceEvents (fileContent, type = null) {
         const typedEvents = [];
         for (let i = 0; i < events.length; i++) {
             if (events[i].type == type) {
-                console.log("Found event of type " + type);
+                // console.log("Found event of type " + type);
                 typedEvents.push(events[i]);
             }
         }
@@ -1777,6 +2817,19 @@ function parceEvents (fileContent, type = null) {
         return typedEvents;
     }
 }
+
+function parceForBitrates (events) {
+    let bitrateEvents = [];
+    bitrateEvents.forEach(element => {
+        if (element.data.bitrate != undefined) {
+            bitrateEvents.push(element);
+        }
+    });
+    return bitrateEvents;
+}
+
+function parceForMinRTT (events) {}
+
 
 
 //==================================================================================================
