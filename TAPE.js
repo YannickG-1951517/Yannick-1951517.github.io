@@ -1507,8 +1507,8 @@ async function drawBufferOccupancyChart () {
     let videoBufferEvents = [];
     let audioBufferEvents = [];
     let subtitleBufferEvents = [];
-    let manifestBufferEvents = [];
-    let otherBufferEvents = [];
+    // let manifestBufferEvents = [];
+    // let otherBufferEvents = [];
     bufferOccupancyEvents.forEach((dataPoint) => {
         if (dataPoint.data.media_type == "video") {
             videoBufferEvents.push(dataPoint);
@@ -1516,11 +1516,12 @@ async function drawBufferOccupancyChart () {
             audioBufferEvents.push(dataPoint);
         } else if (dataPoint.data.media_type == "subtitles") {
             subtitleBufferEvents.push(dataPoint);
-        } else if (dataPoint.data.media_type == "manifest") {
-            manifestBufferEvents.push(dataPoint);
-        } else if (dataPoint.data.media_type == "other") {
-            otherBufferEvents.push(dataPoint);
         }
+        // } else if (dataPoint.data.media_type == "manifest") {
+        //     manifestBufferEvents.push(dataPoint);
+        // } else if (dataPoint.data.media_type == "other") {
+        //     otherBufferEvents.push(dataPoint);
+        // }
     });
 
     
@@ -1557,9 +1558,29 @@ async function drawBufferOccupancyChart () {
     let xAxis = g.append("g")
         .attr("transform", "translate(0," + height + ")")
         .call(d3.axisBottom(xScale));
+    
+    // add the x axis label
+    svg.append('text')
+        .attr('x', width/2 + margin)
+        .attr('y', height + margin -10)
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('Time (ms)');
 
     let yAxis = g.append("g")
         .call(d3.axisLeft(yScale).ticks(10));
+
+    // add y axis label
+    svg.append('text')
+        .attr('x', -height/2)
+        .attr('y', margin/2 - 15)
+        .attr('transform', 'rotate(-90)')
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('RTT (ms)');
+
 
     // title
     svg.append('text')
@@ -1636,7 +1657,7 @@ async function drawBufferOccupancyChart () {
 
     document.getElementById("audio-buffer-checkbox").addEventListener("change", function() {
         if (this.checked) {
-            g.append("g")
+            dots.append("g")
                 .attr("id", "audio-buffer-dot-zone")
                 .selectAll('dot')
                 .data(audioBufferEvents)
@@ -1681,7 +1702,7 @@ async function drawBufferOccupancyChart () {
 
     document.getElementById("subtitle-buffer-checkbox").addEventListener("change", function() {
         if (this.checked) {
-            g.append("g")
+            dots.append("g")
                 .attr("id", "subtitle-buffer-dot-zone")
                 .selectAll('dot')
                 .data(subtitleBufferEvents)
@@ -1724,97 +1745,98 @@ async function drawBufferOccupancyChart () {
         }
     });
 
-    document.getElementById("manifest-buffer-checkbox").addEventListener("change", function() {
-        if (this.checked) {
-            g.append("g")
-                .attr("id", "manifest-buffer-dot-zone")
-                .selectAll('dot')
-                .data(manifestBufferEvents)
-                .enter()
-                .append('circle')
-                .attr("id", "manifest-buffer-dot")
-                .attr("cx", function (d) { return xScale(d.time); } )
-                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
-                .attr("r", 2.5)
-                .style("fill", "#333300");
+    // document.getElementById("manifest-buffer-checkbox").addEventListener("change", function() {
+    //     if (this.checked) {
+    //         g.append("g")
+    //             .attr("id", "manifest-buffer-dot-zone")
+    //             .selectAll('dot')
+    //             .data(manifestBufferEvents)
+    //             .enter()
+    //             .append('circle')
+    //             .attr("id", "manifest-buffer-dot")
+    //             .attr("cx", function (d) { return xScale(d.time); } )
+    //             .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+    //             .attr("r", 2.5)
+    //             .style("fill", "#333300");
             
-            let tooltip = d3.select("body")
-                .append("div")
-                    .attr("id", "manifest-buffer-tooltip")
-                    .style("position", "absolute")
-                    .style("visibility", "hidden")
-                    .style("background-color", "#cccc00")
-                    .style("border", "solid")
-                    .style("border-width", "1px")
-                    .style("border-radius", "5px")
-                    .style("padding", "5px")
-                    .style("width", "auto");
+    //         let tooltip = d3.select("body")
+    //             .append("div")
+    //                 .attr("id", "manifest-buffer-tooltip")
+    //                 .style("position", "absolute")
+    //                 .style("visibility", "hidden")
+    //                 .style("background-color", "#cccc00")
+    //                 .style("border", "solid")
+    //                 .style("border-width", "1px")
+    //                 .style("border-radius", "5px")
+    //                 .style("padding", "5px")
+    //                 .style("width", "auto");
 
-            d3.selectAll("#manifest-buffer-dot")
-                .on("mouseover", function(d) {
-                    d3.select(this).style("fill", "red");
-                    return tooltip.style("visibility", "visible");
-                })
-                .on("mousemove", function() {
-                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Manifest buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
-                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
-                })
-                .on("mouseout", function() {
-                    d3.select(this).style("fill", "#333300");
-                    return tooltip.style("visibility", "hidden");
-                })            
-        } else {
-            d3.selectAll("#manifest-buffer-dot").remove();
-            d3.select("#manifest-buffer-tooltip").remove();
-        }
-    });
+    //         d3.selectAll("#manifest-buffer-dot")
+    //             .on("mouseover", function(d) {
+    //                 d3.select(this).style("fill", "red");
+    //                 return tooltip.style("visibility", "visible");
+    //             })
+    //             .on("mousemove", function() {
+    //                 tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Manifest buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+    //                 return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+    //             })
+    //             .on("mouseout", function() {
+    //                 d3.select(this).style("fill", "#333300");
+    //                 return tooltip.style("visibility", "hidden");
+    //             })            
+    //     } else {
+    //         d3.selectAll("#manifest-buffer-dot").remove();
+    //         d3.select("#manifest-buffer-tooltip").remove();
+    //     }
+    // });
 
-    document.getElementById("other-buffer-checkbox").addEventListener("change", function() {
-        if (this.checked) {
-            g.append("g")
-                .attr("id", "other-buffer-dot-zone")
-                .selectAll('dot')
-                .data(otherBufferEvents)
-                .enter()
-                .append('circle')
-                .attr("id", "other-buffer-dot")
-                .attr("cx", function (d) { return xScale(d.time); } )
-                .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
-                .attr("r", 2.5)
-                .style("fill", "#cc6600");
+    // document.getElementById("other-buffer-checkbox").addEventListener("change", function() {
+    //     if (this.checked) {
+    //         g.append("g")
+    //             .attr("id", "other-buffer-dot-zone")
+    //             .selectAll('dot')
+    //             .data(otherBufferEvents)
+    //             .enter()
+    //             .append('circle')
+    //             .attr("id", "other-buffer-dot")
+    //             .attr("cx", function (d) { return xScale(d.time); } )
+    //             .attr("cy", function (d) { return yScale(d.data.buffer.level_ms); } )
+    //             .attr("r", 2.5)
+    //             .style("fill", "#cc6600");
             
-            let tooltip = d3.select("body")
-                .append("div")
-                    .attr("id", "other-buffer-tooltip")
-                    .style("position", "absolute")
-                    .style("visibility", "hidden")
-                    .style("background-color", "#ffb366")
-                    .style("border", "solid")
-                    .style("border-width", "1px")
-                    .style("border-radius", "5px")
-                    .style("padding", "5px")
-                    .style("width", "auto");
+    //         let tooltip = d3.select("body")
+    //             .append("div")
+    //                 .attr("id", "other-buffer-tooltip")
+    //                 .style("position", "absolute")
+    //                 .style("visibility", "hidden")
+    //                 .style("background-color", "#ffb366")
+    //                 .style("border", "solid")
+    //                 .style("border-width", "1px")
+    //                 .style("border-radius", "5px")
+    //                 .style("padding", "5px")
+    //                 .style("width", "auto");
 
-            d3.selectAll("#other-buffer-dot")
-                .on("mouseover", function(d) {
-                    d3.select(this).style("fill", "red");
-                    return tooltip.style("visibility", "visible");
-                })
-                .on("mousemove", function() {
-                    tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Other buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
-                    return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
-                })
-                .on("mouseout", function() {
-                    d3.select(this).style("fill", "#cc6600");
-                    return tooltip.style("visibility", "hidden");
-                })            
-        } else {
-            d3.selectAll("#other-buffer-dot").remove();
-            d3.select("#other-buffer-tooltip").remove();
-        }
-    });   
+    //         d3.selectAll("#other-buffer-dot")
+    //             .on("mouseover", function(d) {
+    //                 d3.select(this).style("fill", "red");
+    //                 return tooltip.style("visibility", "visible");
+    //             })
+    //             .on("mousemove", function() {
+    //                 tooltip.html("Time: " + d3.select(this).data()[0].time + "<br/>" + "Other buffer Occupancy: " + d3.select(this).data()[0].data.buffer.level_ms + "ms")
+    //                 return tooltip.style("top", (event.pageY-10)+"px").style("left",(event.pageX+10)+"px");
+    //             })
+    //             .on("mouseout", function() {
+    //                 d3.select(this).style("fill", "#cc6600");
+    //                 return tooltip.style("visibility", "hidden");
+    //             })            
+    //     } else {
+    //         d3.selectAll("#other-buffer-dot").remove();
+    //         d3.select("#other-buffer-tooltip").remove();
+    //     }
+    // });   
 
     // Zoom
+    
     let clip = g.append("defs").append("svg:clipPath")
         .attr("id", "clip")
         .append("svg:rect")
@@ -2069,7 +2091,27 @@ async function showRTTGraph () {
         .call(d3.axisBottom(xScale));
 
     let yAxis = g.append("g")
-        .call(d3.axisLeft(yScale).ticks(10));
+        .call(d3.axisLeft(yScale));
+
+    // add x axis label
+    svg.append('text')
+        .attr('x', width/2 + margin)
+        .attr('y', height + margin -10)
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('Time (ms)');
+
+    // add y axis label
+    svg.append('text')
+        .attr('x', -height/2)
+        .attr('y', margin/2 - 15)
+        .attr('transform', 'rotate(-90)')
+        .attr('text-anchor', 'middle')
+        .style('font-family', 'Arial')
+        .style('font-size', 10)
+        .text('RTT (ms)');
+
     
     let dotZone = g.append("g")
         .attr("clip-path", "url(#clip)");
@@ -2688,33 +2730,33 @@ function drawStallButtons () {
         .attr('for', 'subtitle-buffer-checkbox')
         .text('Subtitle buffer')
 
-    dropdownMenu2
-        .append('div')
-        .classed('form-check form-switch row', true)
-        .style('margin-left', '10px')
-            .append('input')
-                .classed('form-check-input col-4', true)
-                .attr('type', 'checkbox')
-                .attr('id', 'manifest-buffer-checkbox')
+    // dropdownMenu2
+    //     .append('div')
+    //     .classed('form-check form-switch row', true)
+    //     .style('margin-left', '10px')
+    //         .append('input')
+    //             .classed('form-check-input col-4', true)
+    //             .attr('type', 'checkbox')
+    //             .attr('id', 'manifest-buffer-checkbox')
     
-    dropdownMenu2.append('label')
-        .classed('form-check-label col-8', true)
-        .attr('for', 'manifest-buffer-checkbox')
-        .text('Manifest buffer')
+    // dropdownMenu2.append('label')
+    //     .classed('form-check-label col-8', true)
+    //     .attr('for', 'manifest-buffer-checkbox')
+    //     .text('Manifest buffer')
 
-    dropdownMenu2
-        .append('div')
-        .classed('form-check form-switch row', true)
-        .style('margin-left', '10px')
-            .append('input')
-                .classed('form-check-input col-4', true)
-                .attr('type', 'checkbox')
-                .attr('id', 'other-buffer-checkbox')
+    // dropdownMenu2
+    //     .append('div')
+    //     .classed('form-check form-switch row', true)
+    //     .style('margin-left', '10px')
+    //         .append('input')
+    //             .classed('form-check-input col-4', true)
+    //             .attr('type', 'checkbox')
+    //             .attr('id', 'other-buffer-checkbox')
     
-    dropdownMenu2.append('label')
-        .classed('form-check-label col-8', true)
-        .attr('for', 'other-buffer-checkbox')
-        .text('Other buffer')
+    // dropdownMenu2.append('label')
+    //     .classed('form-check-label col-8', true)
+    //     .attr('for', 'other-buffer-checkbox')
+    //     .text('Other buffer')
 
 
 
